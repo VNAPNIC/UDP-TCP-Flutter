@@ -1,58 +1,112 @@
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter_app/udp/udp_socket_base.dart';
 
-start_server() async {
-  final socket = await UDPSocket.bindSimple(7777);
+const RESPONSE = 'response';
+const SENDER = 'sender';
 
-  while (true) {
-    final datagram = await socket.receive();
-    print('---> Server received: ${ascii.decode(datagram.data)} from ${datagram.port}');
-    socket.sendBack(datagram, ascii.encode('pong'));
+const JOIN = 'join';
+const ACCEPT = 'accept';
+const RECEIVED = 'received';
+
+class UDPTest {
+  Map<String, dynamic> senderEvents = {};
+  Map<String, dynamic> receiveEvents = {};
+
+  UDPSocket cdsSocket;
+  String ip; // server ip
+  int port; // server port
+  int myPort; // my port
+
+  /// add sender event
+  void addSenderEventListener(String eventName, Function callback) {
+    if (senderEvents.containsKey(eventName)) {
+      senderEvents[eventName].add(callback);
+    } else {
+      senderEvents[eventName] = [callback];
+    }
   }
-}
 
-start_client(int port) async {
-  final socket = await UDPSocket.bindSimple(port);
-  socket.send(ascii.encode('ping'), 'localhost', 7777);
-  final resp = await socket.receive();
-  print('---> Client $port received: ${ascii.decode(resp.data)}');
-
-  await socket.close();
-  print('---> Client $port closed');
-}
-
-start_multicast_client(int port) async {
-  final socket = await UDPSocket.bindMulticast('224.0.2.200',port);
-  if (socket != null) {
-    socket.send(ascii.encode('ping'), '224.0.2.200', 7777);
-    final resp = await socket.receive();
-    print('---> Client $port received: ${ascii.decode(resp.data)}');
-
-    await socket.close();
-    print('---> Client $port closed');
+  /// add sender event
+  void addReceiveEventListener(String eventName, Function callback) {
+    if (receiveEvents.containsKey(eventName)) {
+      receiveEvents[eventName].add(callback);
+    } else {
+      receiveEvents[eventName] = [callback];
+    }
   }
-}
 
-start_multicast_server() async {
-  final socket = await UDPSocket.bindMulticast('224.0.2.200',7777);
-  while (true) {
-    final datagram = await socket.receive();
-    print('---> Server received: ${ascii.decode(datagram.data)} from ${datagram.port}');
-    socket.sendBack(datagram, ascii.encode('pong'));
+  /// Connect server
+  /// [ip] IP of server
+  /// [port] port of server
+  /// [myPort] my port
+  connectServer(String ip, int port, int myPort) async {
+    this.ip = ip;
+    this.port = port;
+    this.myPort = myPort;
+
+    await _initCDSSocket();
+    send(JOIN);
   }
-}
 
-// mark: the port must be server broadcast port
-start_broadcast_client(int port) async {
-  final socket = await UDPSocket.bindBroadcast(port);
-  if (socket != null) {
-    socket.send(ascii.encode('ping'), '192.168.1.255', port);
-    final resp = await socket.receive();
-    print('---> Client $port received: ${ascii.decode(resp.data)}');
-    // `close` method of EasyUDPSocket is awaitable.
-    await socket.close();
-    print('---> Client $port closed');
+  /// send a message to server
+  send(String ms) async {
+    await _initCDSSocket();
+
+    if (cdsSocket != null) {
+      final str = ascii.encode(ms);
+      cdsSocket.send(str, ip, port);
+
+      if (senderEvents.containsKey(SENDER))
+        for (var f in senderEvents[SENDER]) {
+          f(ascii.decode(str));
+        }
+
+      final datagram = await cdsSocket.receive();
+      if (receiveEvents.containsKey(RESPONSE))
+        for (var f in receiveEvents[RESPONSE]) {
+          f(datagram);
+        }
+
+      close();
+    }
+  }
+
+  /// IOS not create new instant RawDatagramSocket because crash
+  _initCDSSocket() async {
+    if (Platform.isAndroid) {
+      cdsSocket = await UDPSocket.bindMulticast(ip, myPort);
+    } else if (Platform.isIOS) {
+      if (cdsSocket == null)
+        cdsSocket = await UDPSocket.bindMulticast(ip, myPort);
+    }
+  }
+
+  /// IOS not close socket
+  close() {
+    if (Platform.isAndroid) {
+      cdsSocket.close();
+    }
+  }
+
+  bindMulticastServer(String ip, int port) async {
+    final socketServer = await UDPSocket.bindMulticast(ip, 7777);
+    while (true) {
+      final datagram = await socketServer.receive();
+      if (receiveEvents.containsKey(RESPONSE))
+        for (var f in receiveEvents[RESPONSE]) {
+          f(datagram);
+        }
+
+      final ms = ascii.decode(datagram.data) == JOIN
+          ? ascii.encode(ACCEPT)
+          : ascii.encode(RECEIVED);
+      socketServer.sendBack(datagram, ms);
+
+      if (senderEvents.containsKey(SENDER))
+        for (var f in senderEvents[SENDER]) {
+          f(ascii.decode(ms));
+        }
+    }
   }
 }
