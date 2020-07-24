@@ -27,4 +27,4 @@ For example, the group address is 239.1.1.1. Sender will send data to the destin
  
 **Video**
 
-[![Watch the video](https://github.com/VNAPNIC/UDP-TCP-Flutter/blob/master/resouce/Skype_Video_Moment.jpg)](https://youtu.be/Zfyp4kcoUUs)
+[<img src="https://github.com/VNAPNIC/UDP-TCP-Flutter/blob/master/resouce/Skype_Video_Moment.jpg" width="50%">](https://youtu.be/Zfyp4kcoUUs)
